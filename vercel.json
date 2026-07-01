@@ -1,17 +1,14 @@
-{
+
+ {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
   "env": {
     "DATABASE_URL": "@database_url",
     "HELIUS_API_KEY": "@helius_api_key",
     "TOKEN_MINT": "@token_mint",
     "NODE_ENV": "production"
   },
+  
+    ...
   "headers": [
     {
       "source": "/:path*",
