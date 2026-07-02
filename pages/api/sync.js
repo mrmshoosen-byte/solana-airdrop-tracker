@@ -1,6 +1,6 @@
 const SolanaService = require('@/lib/solanaService');
-import DatabaseService from '@/lib/databaseService';
-import AnalyticsService from '@/lib/analyticsService';
+const DatabaseService = require('@/lib/databaseService');
+const AnalyticsService = require('@/lib/analyticsService');
 
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
 const TOKEN_MINT = process.env.TOKEN_MINT || '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
@@ -11,28 +11,28 @@ export default async function handler(req, res) {
   }
 
   if (!HELIUS_API_KEY) {
-    return res.status(400).json({ error: 'HELIUS_API_KEY not set in env' });
+    return res.status(400).json({ error: 'HELIUS_API_KEY not configured' });
   }
 
   try {
-    console.log(`🔄 Starting sync for token: ${TOKEN_MINT}`);
-    console.log(`🔑 Using API Key: ${HELIUS_API_KEY.substring(0, 10)}...`);
+    console.log('🔄 Starting sync...');
+    
+    const db = new DatabaseService();
+    const solana = new SolanaService(HELIUS_API_KEY);
 
-    console.log('🔄 Starting sync process...');
-
-    // Step 1: Get token metadata
-    console.log('📦 Fetching token metadata...');
+    console.log(`📦 Fetching token metadata for: ${TOKEN_MINT}`);
     const tokenMetadata = await solana.getTokenMetadata(TOKEN_MINT);
+    
     if (!tokenMetadata) {
       await db.close();
       return res.status(400).json({ error: 'Token not found on Solana' });
     }
 
-    // Store token
+    console.log(`✅ Token found: ${JSON.stringify(tokenMetadata)}`);
+    
     const tokenId = await db.upsertToken(TOKEN_MINT, tokenMetadata);
     console.log(`✅ Token stored with ID: ${tokenId}`);
 
-    // Step 2: Get airdrop recipients
     console.log('👥 Fetching airdrop recipients...');
     const recipients = await solana.getAirdropRecipients(TOKEN_MINT);
     
@@ -43,104 +43,46 @@ export default async function handler(req, res) {
 
     console.log(`✅ Found ${recipients.length} recipients`);
 
-    // Step 3: Store recipients and analyze behavior
     let processed = 0;
-    const walletStates = [];
-
-    for (const recipient of recipients) {
+    for (const recipient of recipients.slice(0, 50)) {
       try {
-        // Store wallet
         const walletId = await db.upsertWallet(recipient.address);
-
-        // Get current balance
         const balanceInfo = await solana.getWalletTokenBalance(recipient.address, TOKEN_MINT);
 
-        // Get wallet transactions to detect swaps
-        const transactions = await solana.getWalletTransactions(recipient.address, TOKEN_MINT);
-        
-        // Initialize state
-        let totalSold = 0;
-        let totalBought = 0;
-
-        // Check for swap events
-        for (const tx of transactions) {
-          const swaps = await solana.detectSwapEvents(tx.signature);
-          if (swaps.length > 0) {
-            // Mark as potential seller
-            for (const swap of swaps) {
-              await db.storeSwapEvent(walletId, tokenId, recipient.currentBalance || 0, tx.signature, tx.slot, tx.blockTime || Date.now() / 1000, swap.dex);
-              totalSold += recipient.currentBalance || 0;
-            }
-          }
-        }
-
-        // Classify behavior
         const behavior = AnalyticsService.classifyWalletBehavior(
           recipient.currentBalance * Math.pow(10, tokenMetadata.decimals),
           balanceInfo.rawBalance,
-          totalSold,
-          totalBought
+          0,
+          0
         );
 
-        // Store wallet state
-        const stateId = await db.updateWalletTokenState(walletId, tokenId, {
+        await db.updateWalletTokenState(walletId, tokenId, {
           currentBalance: balanceInfo.rawBalance,
           originalAirdropAmount: recipient.currentBalance * Math.pow(10, tokenMetadata.decimals),
-          totalBought,
-          totalSold,
+          totalBought: 0,
+          totalSold: 0,
           behaviorStatus: behavior
         });
 
-        walletStates.push({
-          walletId,
-          address: recipient.address,
-          behavior,
-          balance: balanceInfo.balance
-        });
-
         processed++;
-        if (processed % 50 === 0) {
-          console.log(`⏳ Processed ${processed}/${recipients.length} wallets...`);
-        }
       } catch (error) {
-        console.warn(`⚠️  Error processing wallet ${recipient.address}:`, error.message);
+        console.warn(`⚠️ Error processing wallet: ${error.message}`);
       }
     }
 
-    // Step 4: Calculate analytics
-    console.log('📊 Calculating analytics...');
     const analytics = await db.getTokenAnalytics(tokenId);
-    const topSellers = await db.getTopSellers(tokenId, 20);
-    const diamondHands = await db.getDiamondHands(tokenId, 20);
-
     await db.close();
-
-    console.log('✅ Sync complete!');
 
     return res.status(200).json({
       success: true,
-      message: 'Sync completed successfully',
+      message: 'Sync completed',
       data: {
-        token: {
-          mint: TOKEN_MINT,
-          decimals: tokenMetadata.decimals,
-          totalSupply: tokenMetadata.totalSupply
-        },
-        summary: {
-          totalRecipients: recipients.length,
-          processedWallets: processed,
-          ...analytics
-        },
-        segments: AnalyticsService.getBehavioralSegments(analytics || {}),
-        topSellers: topSellers.slice(0, 10),
-        diamondHands: diamondHands.slice(0, 10)
+        token: { mint: TOKEN_MINT, decimals: tokenMetadata.decimals },
+        summary: { totalRecipients: recipients.length, processedWallets: processed, ...analytics }
       }
     });
   } catch (error) {
     console.error('❌ Sync failed:', error);
-    return res.status(500).json({ 
-      error: 'Sync failed',
-      details: error.message 
-    });
+    return res.status(500).json({ error: 'Sync failed', details: error.message });
   }
 }
