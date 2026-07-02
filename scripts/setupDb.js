@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 
+const dotenv = require('dotenv');
+const path = require('path');
 const { Pool } = require('pg');
-require('dotenv').config();
+
+// Explicitly load .env.local
+const envPath = path.resolve(process.cwd(), '.env.local');
+console.log(`📁 Loading env from: ${envPath}`);
+dotenv.config({ path: envPath });
+
+console.log(`✅ DATABASE_URL loaded: ${process.env.DATABASE_URL ? 'YES' : 'NO'}`);
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/airdrop_tracker',
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
 const schema = `
