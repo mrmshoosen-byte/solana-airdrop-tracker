@@ -25,7 +25,7 @@ export default async function handler(req, res) {
     console.log('📦 Fetching token metadata...');
     const tokenMetadata = await solana.getTokenMetadata(TOKEN_MINT);
     
-    console.log('Token metadata result:', tokenMetadata);
+    console.log('Token metadata:', tokenMetadata);
 
     if (!tokenMetadata) {
       return res.status(400).json({ error: 'Token not found on Solana' });
@@ -50,40 +50,44 @@ export default async function handler(req, res) {
     for (const recipient of recipients) {
       try {
         const walletId = await db.upsertWallet(recipient.address);
-        const balanceInfo = await solana.getWalletTokenBalance(recipient.address, TOKEN_MINT);
+        
+        // Use the actual balance from recipient data
+        const currentBalance = (recipient.currentBalance || 0) * Math.pow(10, tokenMetadata.decimals);
+
+        console.log(`Processing wallet ${processed + 1}/${recipients.length}: ${recipient.address.substring(0, 8)}... balance: ${recipient.currentBalance}`);
 
         const behavior = AnalyticsService.classifyWalletBehavior(
-          recipient.currentBalance * Math.pow(10, tokenMetadata.decimals),
-          balanceInfo.rawBalance,
+          currentBalance,
+          currentBalance,
           0,
           0
         );
 
+        // Store airdrop recipient record FIRST (important for foreign key)
+        await db.storeAirdropRecipient(
+          tokenId,
+          walletId,
+          currentBalance,
+          new Date(),
+          'airdrop-tx'
+        );
+
+        // Then update wallet state with actual balance
         await db.updateWalletTokenState(walletId, tokenId, {
-          currentBalance: balanceInfo.rawBalance,
-          originalAirdropAmount: recipient.currentBalance * Math.pow(10, tokenMetadata.decimals),
+          currentBalance: currentBalance.toString(),
+          originalAirdropAmount: currentBalance,
           totalBought: 0,
           totalSold: 0,
           behaviorStatus: behavior
         });
 
-        // Store airdrop recipient
-        await db.storeAirdropRecipient(
-          tokenId,
-          walletId,
-          recipient.currentBalance * Math.pow(10, tokenMetadata.decimals),
-          new Date(),
-          'airdrop'
-        );
-
         processed++;
-        if (processed % 10 === 0) {
-          console.log(`⏳ Processed ${processed} wallets...`);
-        }
       } catch (error) {
-        console.warn(`⚠️ Error processing wallet: ${error.message}`);
+        console.error(`❌ Error processing wallet ${recipient.address}:`, error.message);
       }
     }
+
+    console.log(`\n✅ Successfully processed ${processed}/${recipients.length} wallets\n`);
 
     console.log('📊 Calculating analytics...');
     const analytics = await db.getTokenAnalytics(tokenId);
@@ -92,14 +96,14 @@ export default async function handler(req, res) {
     let diamondHands = [];
 
     try {
-      topSellers = await db.getTopSellers(tokenId, 10);
+      topSellers = await db.getTopSellers(tokenId, 15);
       console.log(`✅ Found ${topSellers.length} top sellers`);
     } catch (error) {
       console.warn('⚠️ Warning getting top sellers:', error.message);
     }
 
     try {
-      diamondHands = await db.getDiamondHands(tokenId, 10);
+      diamondHands = await db.getDiamondHands(tokenId, 15);
       console.log(`✅ Found ${diamondHands.length} diamond hands`);
     } catch (error) {
       console.warn('⚠️ Warning getting diamond hands:', error.message);
@@ -108,7 +112,6 @@ export default async function handler(req, res) {
     await db.close();
 
     console.log('✅ Sync complete!');
-    console.log('Analytics:', analytics);
 
     return res.status(200).json({
       success: true,
@@ -131,9 +134,21 @@ export default async function handler(req, res) {
           accumulated_percentage: analytics?.accumulated_percentage || 0
         },
         segments: {
-          paperhands: { count: analytics?.sold_count || 0, percentage: analytics?.sold_percentage || 0 },
-          diamondHands: { count: analytics?.held_count || 0, percentage: analytics?.held_percentage || 0 },
-          believers: { count: analytics?.accumulated_count || 0, percentage: analytics?.accumulated_percentage || 0 }
+          paperhands: { 
+            count: analytics?.sold_count || 0, 
+            percentage: analytics?.sold_percentage || 0,
+            description: 'Wallets that fully exited position'
+          },
+          diamondHands: { 
+            count: analytics?.held_count || processed, 
+            percentage: analytics?.held_percentage || 100,
+            description: 'Wallets still holding original airdrop'
+          },
+          believers: { 
+            count: analytics?.accumulated_count || 0, 
+            percentage: analytics?.accumulated_percentage || 0,
+            description: 'Wallets that bought more after airdrop'
+          }
         },
         topSellers: topSellers || [],
         diamondHands: diamondHands || []
@@ -143,8 +158,7 @@ export default async function handler(req, res) {
     console.error('❌ Sync failed:', error);
     return res.status(500).json({ 
       error: 'Sync failed',
-      details: error.message,
-      stack: error.stack
+      details: error.message
     });
   }
 }
