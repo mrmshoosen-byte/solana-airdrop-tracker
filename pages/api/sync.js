@@ -1,4 +1,4 @@
-import SolanaService from '@/lib/solanaService';
+const SolanaService = require('@/lib/solanaService');
 import DatabaseService from '@/lib/databaseService';
 import AnalyticsService from '@/lib/analyticsService';
 
