@@ -47,14 +47,16 @@ export default async function handler(req, res) {
     }
 
     let processed = 0;
-    for (const recipient of recipients) {
+    const failedWallets = [];
+    
+    for (let i = 0; i < recipients.length; i++) {
+      const recipient = recipients[i];
       try {
         const walletId = await db.upsertWallet(recipient.address);
         
-        // Use the actual balance from recipient data
         const currentBalance = (recipient.currentBalance || 0) * Math.pow(10, tokenMetadata.decimals);
 
-        console.log(`Processing wallet ${processed + 1}/${recipients.length}: ${recipient.address.substring(0, 8)}... balance: ${recipient.currentBalance}`);
+        console.log(`Processing ${i + 1}/${recipients.length}: ${recipient.address.substring(0, 8)}... balance: ${recipient.currentBalance}`);
 
         const behavior = AnalyticsService.classifyWalletBehavior(
           currentBalance,
@@ -63,16 +65,16 @@ export default async function handler(req, res) {
           0
         );
 
-        // Store airdrop recipient record FIRST (important for foreign key)
+        // Store airdrop recipient record
         await db.storeAirdropRecipient(
           tokenId,
           walletId,
           currentBalance,
           new Date(),
-          'airdrop-tx'
+          'airdrop'
         );
 
-        // Then update wallet state with actual balance
+        // Update wallet state
         await db.updateWalletTokenState(walletId, tokenId, {
           currentBalance: currentBalance.toString(),
           originalAirdropAmount: currentBalance,
@@ -82,12 +84,19 @@ export default async function handler(req, res) {
         });
 
         processed++;
+        if (processed % 20 === 0) {
+          console.log(`⏳ Processed ${processed}/${recipients.length} wallets...`);
+        }
       } catch (error) {
-        console.error(`❌ Error processing wallet ${recipient.address}:`, error.message);
+        console.error(`❌ Error processing wallet ${i}: ${error.message}`);
+        failedWallets.push(recipient.address);
       }
     }
 
-    console.log(`\n✅ Successfully processed ${processed}/${recipients.length} wallets\n`);
+    console.log(`\n✅ Successfully processed ${processed}/${recipients.length} wallets`);
+    if (failedWallets.length > 0) {
+      console.log(`⚠️ Failed wallets: ${failedWallets.length}`);
+    }
 
     console.log('📊 Calculating analytics...');
     const analytics = await db.getTokenAnalytics(tokenId);
@@ -96,14 +105,14 @@ export default async function handler(req, res) {
     let diamondHands = [];
 
     try {
-      topSellers = await db.getTopSellers(tokenId, 15);
+      topSellers = await db.getTopSellers(tokenId, 20);
       console.log(`✅ Found ${topSellers.length} top sellers`);
     } catch (error) {
       console.warn('⚠️ Warning getting top sellers:', error.message);
     }
 
     try {
-      diamondHands = await db.getDiamondHands(tokenId, 15);
+      diamondHands = await db.getDiamondHands(tokenId, 20);
       console.log(`✅ Found ${diamondHands.length} diamond hands`);
     } catch (error) {
       console.warn('⚠️ Warning getting diamond hands:', error.message);
@@ -125,6 +134,7 @@ export default async function handler(req, res) {
         summary: {
           totalRecipients: recipients.length,
           processedWallets: processed,
+          failedWallets: failedWallets.length,
           total_recipients: recipients.length,
           sold_count: analytics?.sold_count || 0,
           held_count: analytics?.held_count || processed,
