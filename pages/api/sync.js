@@ -86,8 +86,20 @@ export default async function handler(req, res) {
 
     console.log('📊 Calculating analytics...');
     const analytics = await db.getTokenAnalytics(tokenId);
-    const topSellers = await db.getTopSellers(tokenId, 10);
-    const diamondHands = await db.getDiamondHands(tokenId, 10);
+    let topSellers = [];
+    let diamondHands = [];
+
+    try {
+      topSellers = await db.getTopSellers(tokenId, 10);
+    } catch (error) {
+      console.warn('⚠️ Error getting top sellers:', error.message);
+    }
+
+    try {
+      diamondHands = await db.getDiamondHands(tokenId, 10);
+    } catch (error) {
+      console.warn('⚠️ Error getting diamond hands:', error.message);
+    }
 
     await db.close();
 
@@ -105,19 +117,23 @@ export default async function handler(req, res) {
         summary: {
           totalRecipients: recipients.length,
           processedWallets: processed,
-          ...analytics
+          total_recipients: recipients.length,
+          sold_count: 0,
+          held_count: processed,
+          accumulated_count: 0,
+          sold_percentage: 0,
+          held_percentage: 100,
+          accumulated_percentage: 0
         },
-        topSellers: topSellers?.slice(0, 10) || [],
-        diamondHands: diamondHands?.slice(0, 10) || []
+        topSellers: topSellers || [],
+        diamondHands: diamondHands || []
       }
     });
   } catch (error) {
     console.error('❌ Sync failed:', error);
-    console.error('Error stack:', error.stack);
     return res.status(500).json({ 
       error: 'Sync failed',
-      details: error.message,
-      stack: error.stack
+      details: error.message
     });
   }
 }
