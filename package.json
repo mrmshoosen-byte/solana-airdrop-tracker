@@ -1,5 +1,6 @@
 {
   "name": "solana-airdrop-tracker",
+  "type": "module",
   "version": "1.0.0",
   "description": "Solana token airdrop tracking and wallet behavior analytics",
   "private": true,
