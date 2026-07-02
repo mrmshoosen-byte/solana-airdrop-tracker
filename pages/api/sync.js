@@ -3,7 +3,7 @@ import DatabaseService from '@/lib/databaseService';
 import AnalyticsService from '@/lib/analyticsService';
 
 const HELIUS_API_KEY = process.env.HELIUS_API_KEY;
-const TOKEN_MINT = process.env.TOKEN_MINT;
+const TOKEN_MINT = process.env.TOKEN_MINT || '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -11,17 +11,12 @@ export default async function handler(req, res) {
   }
 
   if (!HELIUS_API_KEY) {
-    return res.status(400).json({ error: 'HELIUS_API_KEY not configured' });
-  }
-
-  if (!TOKEN_MINT) {
-    return res.status(400).json({ error: 'TOKEN_MINT not configured' });
+    return res.status(400).json({ error: 'HELIUS_API_KEY not set in env' });
   }
 
   try {
-    const db = new DatabaseService();
-    const solana = new SolanaService(HELIUS_API_KEY);
-    // rest of code...
+    console.log(`🔄 Starting sync for token: ${TOKEN_MINT}`);
+    console.log(`🔑 Using API Key: ${HELIUS_API_KEY.substring(0, 10)}...`);
 
     console.log('🔄 Starting sync process...');
 
