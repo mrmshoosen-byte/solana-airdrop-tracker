@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { motion } from 'framer-motion';
 
 export default function Dashboard() {
@@ -148,9 +148,30 @@ export default function Dashboard() {
 
             {/* Charts */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
-              {/* Pie Chart */}
+              {/* Bar Chart */}
               <motion.div 
                 initial={{ opacity: 0, x: -20 }} 
+                animate={{ opacity: 1, x: 0 }}
+                className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 backdrop-blur"
+              >
+                <h3 className="text-lg font-bold text-white mb-6">Behavior Percentage</h3>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={percentageData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                    <XAxis dataKey="name" stroke="#9ca3af" />
+                    <YAxis stroke="#9ca3af" />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
+                      labelStyle={{ color: '#fff' }}
+                    />
+                    <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </motion.div>
+
+              {/* Pie Chart */}
+              <motion.div 
+                initial={{ opacity: 0, x: 20 }} 
                 animate={{ opacity: 1, x: 0 }}
                 className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 backdrop-blur"
               >
@@ -176,27 +197,6 @@ export default function Dashboard() {
                     />
                     <Legend />
                   </PieChart>
-                </ResponsiveContainer>
-              </motion.div>
-
-              {/* Bar Chart */}
-              <motion.div 
-                initial={{ opacity: 0, x: 20 }} 
-                animate={{ opacity: 1, x: 0 }}
-                className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 backdrop-blur"
-              >
-                <h3 className="text-lg font-bold text-white mb-6">Behavior Percentage</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <BarChart data={percentageData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
-                    <XAxis dataKey="name" stroke="#9ca3af" />
-                    <YAxis stroke="#9ca3af" />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#1e293b', border: '1px solid #475569' }}
-                      labelStyle={{ color: '#fff' }}
-                    />
-                    <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-                  </BarChart>
                 </ResponsiveContainer>
               </motion.div>
             </div>
@@ -237,10 +237,10 @@ export default function Dashboard() {
                     <div key={idx} className="flex justify-between items-center p-3 bg-slate-700/30 rounded-lg border border-slate-600/50">
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-sm font-mono truncate">{holder.address}</p>
-                        <p className="text-xs text-gray-400">Holding for {holder.days_holding} days</p>
+                        <p className="text-xs text-gray-400">Holding for {holder.days_holding || 0} days</p>
                       </div>
                       <div className="text-right ml-2">
-                        <p className="text-blue-400 text-sm font-bold">{holder.days_holding}d</p>
+                        <p className="text-blue-400 text-sm font-bold">{holder.days_holding || 0}d</p>
                       </div>
                     </div>
                   ))}
