@@ -20,44 +20,47 @@ async function importCSV() {
     console.log('📦 Getting token...');
     const token = await db.getTokenByMint(TOKEN_MINT);
     if (!token) {
-      console.error('❌ Token not found. Run sync first.');
+      console.error('❌ Token not found.');
       process.exit(1);
     }
     const tokenId = token.id;
-    console.log(`✅ Using token ID: ${tokenId}`);
+    console.log(`✅ Token ID: ${tokenId}`);
 
     console.log(`📖 Reading CSV: ${CSV_FILE}`);
     const csv = fs.readFileSync(CSV_FILE, 'utf8');
     const lines = csv.trim().split('\n');
 
-    console.log(`📊 Found ${lines.length} recipients`);
+    console.log(`📊 Found ${lines.length} total rows\n`);
 
     let imported = 0;
+    let skipped = 0;
+    
     for (let i = 0; i < lines.length; i++) {
+      // Skip header row
+      if (i === 0) {
+        console.log('⏭️ Skipping header row');
+        continue;
+      }
+
       const line = lines[i];
       const parts = line.split(',');
       
-      // Column 4 is wallet, Column 6 is the amount in raw units
-      const walletAddress = parts[4] ? parts[4].trim() : null;
-      const amountRaw = Math.floor(parseFloat(parts[6]) || 0); // Use column 6, convert to integer
+      // Column 0 is the recipient wallet address
+      const walletAddress = parts[0] ? parts[0].trim() : null;
+      // Column 6 is raw amount
+      const amountRaw = Math.floor(parseFloat(parts[6]) || 0);
+      // Column 2 is timestamp
       const timestamp = parts[2] ? new Date(parts[2]) : new Date();
 
       if (!walletAddress || walletAddress.length !== 44) {
-        console.warn(`⚠️ Skipping invalid wallet: ${walletAddress}`);
+        skipped++;
+        if (i < 10) console.warn(`❌ Row ${i}: Invalid wallet length ${walletAddress?.length}`);
         continue;
       }
 
       try {
         const walletId = await db.upsertWallet(walletAddress);
-
-        await db.storeAirdropRecipient(
-          tokenId,
-          walletId,
-          amountRaw,
-          timestamp,
-          'csv-import'
-        );
-
+        await db.storeAirdropRecipient(tokenId, walletId, amountRaw, timestamp, 'csv-import');
         await db.updateWalletTokenState(walletId, tokenId, {
           currentBalance: amountRaw.toString(),
           originalAirdropAmount: amountRaw,
@@ -67,18 +70,19 @@ async function importCSV() {
         });
 
         imported++;
-        if (imported % 100 === 0) {
-          console.log(`⏳ Imported ${imported}/${lines.length}...`);
-        }
+        if (imported % 200 === 0) console.log(`⏳ ${imported}...`);
       } catch (error) {
-        console.warn(`⚠️ Error importing ${walletAddress}: ${error.message}`);
+        console.warn(`⚠️ Row ${i} error: ${error.message}`);
+        skipped++;
       }
     }
 
-    console.log(`\n✅ Imported ${imported}/${lines.length} recipients`);
+    console.log(`\n✅ Imported: ${imported}`);
+    console.log(`⚠️ Skipped: ${skipped}`);
+    console.log(`📊 Total: ${imported + skipped}`);
     await db.close();
   } catch (error) {
-    console.error('❌ Failed:', error);
+    console.error('❌ Failed:', error.message);
     process.exit(1);
   }
 }
