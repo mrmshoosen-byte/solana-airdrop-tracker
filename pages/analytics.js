@@ -242,7 +242,7 @@ export default function Analytics() {
                       <div className="flex-1 min-w-0">
                         <p className="text-white text-xs font-mono truncate">{holder.address}</p>
                         <p className="text-xs text-gray-400">
-                          Balance: {(holder.current_balance / 1e6).toFixed(0)} • {holder.days_holding}d holding
+                          Balance: {(holder.current_balance / 1e6).toFixed(0)} • {holder.days_holding || 0}d holding
                         </p>
                       </div>
                       <div className="text-right ml-2">
