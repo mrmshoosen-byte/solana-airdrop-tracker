@@ -37,20 +37,19 @@ async function importCSV() {
       const line = lines[i];
       const parts = line.split(',');
       
-      // Column 5 is the wallet address (44 chars)
+      // Column 4 is wallet, Column 6 is the amount in raw units
       const walletAddress = parts[4] ? parts[4].trim() : null;
-      const amount = parseFloat(parts[3]) || 0;
+      const amountRaw = Math.floor(parseFloat(parts[6]) || 0); // Use column 6, convert to integer
       const timestamp = parts[2] ? new Date(parts[2]) : new Date();
 
       if (!walletAddress || walletAddress.length !== 44) {
-        console.warn(`⚠️ Skipping invalid wallet: ${walletAddress} (len: ${walletAddress?.length})`);
+        console.warn(`⚠️ Skipping invalid wallet: ${walletAddress}`);
         continue;
       }
 
       try {
         const walletId = await db.upsertWallet(walletAddress);
 
-        const amountRaw = amount * Math.pow(10, 6);
         await db.storeAirdropRecipient(
           tokenId,
           walletId,
