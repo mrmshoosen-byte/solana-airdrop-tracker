@@ -37,66 +37,68 @@ export default async function handler(req, res) {
     const tokenId = await db.upsertToken(TOKEN_MINT, tokenMetadata);
     console.log(`✅ Token stored with ID: ${tokenId}`);
 
-    console.log('👥 Fetching airdrop recipients...');
-    const recipients = await solana.getAirdropRecipients(TOKEN_MINT);
-    console.log(`✅ Found ${recipients.length} recipients`);
+    console.log('👥 Checking for existing recipients...');
+    const existingRecipients = await db.getAirdropRecipients(tokenId);
+    console.log(`✅ Found ${existingRecipients.length} recipients in database`);
 
-    if (recipients.length === 0) {
-      await db.close();
-      return res.status(400).json({ error: 'No airdrop recipients found' });
-    }
-
+    let recipients = [];
     let processed = 0;
-    const failedWallets = [];
-    
-    for (let i = 0; i < recipients.length; i++) {
-      const recipient = recipients[i];
-      try {
-        const walletId = await db.upsertWallet(recipient.address);
-        
-        const currentBalance = (recipient.currentBalance || 0) * Math.pow(10, tokenMetadata.decimals);
 
-        console.log(`Processing ${i + 1}/${recipients.length}: ${recipient.address.substring(0, 8)}... balance: ${recipient.currentBalance}`);
+    if (existingRecipients.length === 0) {
+      console.log('📡 No recipients found, fetching from blockchain...');
+      recipients = await solana.getAirdropRecipients(TOKEN_MINT);
+      console.log(`✅ Found ${recipients.length} recipients from blockchain`);
 
-        const behavior = AnalyticsService.classifyWalletBehavior(
-          currentBalance,
-          currentBalance,
-          0,
-          0
-        );
-
-        // Store airdrop recipient record
-        await db.storeAirdropRecipient(
-          tokenId,
-          walletId,
-          currentBalance,
-          new Date(),
-          'airdrop'
-        );
-
-        // Update wallet state
-        await db.updateWalletTokenState(walletId, tokenId, {
-          currentBalance: currentBalance.toString(),
-          originalAirdropAmount: currentBalance,
-          totalBought: 0,
-          totalSold: 0,
-          behaviorStatus: behavior
-        });
-
-        processed++;
-        if (processed % 20 === 0) {
-          console.log(`⏳ Processed ${processed}/${recipients.length} wallets...`);
-        }
-      } catch (error) {
-        console.error(`❌ Error processing wallet ${i}: ${error.message}`);
-        failedWallets.push(recipient.address);
+      if (recipients.length === 0) {
+        await db.close();
+        return res.status(400).json({ error: 'No airdrop recipients found' });
       }
+
+      // Process blockchain recipients
+      for (let i = 0; i < recipients.length; i++) {
+        const recipient = recipients[i];
+        try {
+          const walletId = await db.upsertWallet(recipient.address);
+          const currentBalance = (recipient.currentBalance || 0) * Math.pow(10, tokenMetadata.decimals);
+
+          const behavior = AnalyticsService.classifyWalletBehavior(
+            currentBalance,
+            currentBalance,
+            0,
+            0
+          );
+
+          await db.storeAirdropRecipient(
+            tokenId,
+            walletId,
+            currentBalance,
+            new Date(),
+            'airdrop'
+          );
+
+          await db.updateWalletTokenState(walletId, tokenId, {
+            currentBalance: currentBalance.toString(),
+            originalAirdropAmount: currentBalance,
+            totalBought: 0,
+            totalSold: 0,
+            behaviorStatus: behavior
+          });
+
+          processed++;
+          if (processed % 20 === 0) {
+            console.log(`⏳ Processed ${processed} wallets...`);
+          }
+        } catch (error) {
+          console.error(`❌ Error processing wallet: ${error.message}`);
+        }
+      }
+    } else {
+      console.log(`✅ Using ${existingRecipients.length} recipients from CSV import`);
+      recipients = existingRecipients;
+      processed = existingRecipients.length;
     }
 
     console.log(`\n✅ Successfully processed ${processed}/${recipients.length} wallets`);
-    if (failedWallets.length > 0) {
-      console.log(`⚠️ Failed wallets: ${failedWallets.length}`);
-    }
 
     console.log('📊 Calculating analytics...');
     const analytics = await db.getTokenAnalytics(tokenId);
@@ -134,7 +136,6 @@ export default async function handler(req, res) {
         summary: {
           totalRecipients: recipients.length,
           processedWallets: processed,
-          failedWallets: failedWallets.length,
           total_recipients: recipients.length,
           sold_count: analytics?.sold_count || 0,
           held_count: analytics?.held_count || processed,
